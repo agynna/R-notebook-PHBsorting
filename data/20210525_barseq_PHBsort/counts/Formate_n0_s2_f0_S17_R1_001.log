@@ -1,0 +1,9 @@
+Reads 11007657 Multiplexed 11007657 Usable(20) 10744327 fraction 0.976077561283023 unique codes 139780 
+Wrong presequence position: 2160 reads (0.020%)
+Off	18	0	0.000
+Off	19	0	0.000
+Off	20	10744327	1.000
+Off	21	0	0.000
+Off	22	0	0.000
+Wrote 139780 unique barcodes to .//Formate_n0_s2_f0_S17_R1_001.codes
+Wrote number of barcodes seen a certain number of times to .//Formate_n0_s2_f0_S17_R1_001.counts; nOnce = 99561

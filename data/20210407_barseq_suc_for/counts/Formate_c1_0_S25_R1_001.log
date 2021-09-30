@@ -1,0 +1,9 @@
+Reads 10301582 Multiplexed 10301582 Usable(20) 10023359 fraction 0.972992206439749 unique codes 776124 
+Wrong presequence position: 2844 reads (0.028%)
+Off	18	0	0.000
+Off	19	0	0.000
+Off	20	10023359	1.000
+Off	21	0	0.000
+Off	22	0	0.000
+Wrote 776124 unique barcodes to intermediate/projects/20210407_barseq_suc_for/Formate_c1_0_S25_R1_001.codes
+Wrote number of barcodes seen a certain number of times to intermediate/projects/20210407_barseq_suc_for/Formate_c1_0_S25_R1_001.counts; nOnce = 560930

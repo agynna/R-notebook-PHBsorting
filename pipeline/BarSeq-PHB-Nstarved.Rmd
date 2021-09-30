@@ -1,0 +1,947 @@
+---
+title: "Analysis of PHB sorting of a N-starved transposon library"
+author: "Arvid Gynnå & Michael Jahn"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    toc: yes
+    df_print: paged
+  pdf_document:
+    toc: yes
+  html_notebook:
+    theme: spacelab
+    toc: yes
+---
+
+## Description
+
+This R notebook is a bioinformatics pipeline to analyze data obtained by sorting a barcoded transposon library in *Ralstonia eutropha* (a.k.a. *Cupriavidus necator*) by density, achieving a selection by PHB content. For background and details regarding the method, see [Wetmore at al., mBio, 2015](https://mbio.asm.org/content/6/3/e00306-15) and [Price et al., Nature, 2018](http://www.nature.com/articles/s41586-018-0124-0)). This notebook has been adapted from a pipeline for analysis of chemostat competition experiments by Michael Jahn. 
+
+This notebook analyzes data from the second N-starved PHB sortig experiment. The first experiment har large problems with low barcode diversity and enrichment of unmapped barcodes. This lead to less a mapping ratio of less than 10 %, i e few of the reads could be mapped to a known barcode. For this reason the experiment was repeated, and the rerun came out with normal diversity. 
+
+## Load data 
+### Libraries
+```{r global-options, include=FALSE}
+knitr::opts_chunk$set(fig.width=7, fig.height=4, fig.path='../figures/Nstarved/',
+                      echo=FALSE, warning=FALSE, message=FALSE)
+```
+
+```{r, message = FALSE}
+library(tidyverse)
+library(ggpubr)
+library(colorspace)
+library(stringi)
+library(gridExtra)
+library(RColorBrewer)
+```
+
+Due to the low mapping, the N starvation was redone and resequenced together with some of Michaels experiments. 
+```{r, message = FALSE}
+# import barseq counts data in wide format and reshape to long format
+df_counts <- read_tsv("../data/20210624_barseq_mixed/results/result.poolcount") %>%
+  pivot_longer(
+    cols = !all_of(c("barcode", "rcbarcode", "scaffold", "strand", "pos")), 
+    names_to = "sample", values_to = "n_reads") %>% 
+  filter(str_starts(sample, "F"))
+
+# import summary statistics, only for evalutation of quality 
+df_colsum = read_tsv("../data/20210624_barseq_mixed/results/result.colsum") %>%
+  filter(str_starts(Index, "F"))
+
+# import fitness data, the final output of the BarSeq pipeline
+load("../data/20210624_barseq_mixed/results/fitness_gene.Rdata")
+df_fitness <- fitness_gene %>%
+  filter(str_starts(condition, "F")) %>%
+  mutate(ID = as.numeric(ID)) %>%
+  separate(condition, 
+           into = c("carbon", "nitrogen"), 
+           sep = "_") %>%
+  rename(locus_tag = locusId) %>%
+  mutate(time = recode(time, `0`="F0", `1`="F1", `2`="F2", `3`="F3") ) %>%
+  filter(!str_detect(time, "F0"))
+```
+
+### Get gene annotation and essentiality data on fructose and formate
+```{r}
+# import genome annotation
+df_ref <- read_csv("../data/ref/Ralstonia_H16_genome_annotation.csv") %>%
+  filter(!duplicated(locus_tag)) %>%
+  mutate(eggNOG_name = if_else(is.na(eggNOG_name), gene_name, eggNOG_name))
+
+load("../data/20201222_barseq_frc/results/fitness_gene.Rdata")
+df_essential_frc <- fitness_gene %>%
+  filter(Time == 8, Condition == "short pulse")  %>%
+  mutate(ID = as.numeric(ID), substrate = "fructose", locus_tag = locusId) %>%
+  group_by(locus_tag) %>%
+  summarize(norm_fg_mean_frc = mean(Norm_fg)) %>%
+  mutate(essential_frc= if_else(norm_fg_mean_frc < -2.5, TRUE, FALSE))
+
+load("../data/20210407_barseq_suc_for/results/fitness_gene.Rdata")
+df_essential_for <- fitness_gene %>%
+  separate(Condition, sep = "_", into = c("substrate", "condition")) %>%
+  filter(Time == 8, condition == "pulse")  %>%
+  mutate(ID = as.numeric(ID), substrate = "fructose", locus_tag = locusId) %>%
+  group_by(locus_tag) %>%
+  summarize(norm_fg_mean_for = mean(Norm_fg)) %>%
+  mutate(essential_for= if_else(norm_fg_mean_for < -2.5, TRUE, FALSE))
+
+df_essential = full_join(df_essential_for, df_essential_frc)
+```
+
+
+## Summary statistics
+
+First some diagnostics. Overview about the number of reads per sample and their mapping. This experiment has a normal fraction of mapped reads of about 75 %, which gives more than 6M mapped reads in  all samples but two. 
+
+```{r, fig.width = 7, fig.height = 6, message = FALSE}
+# Number of total mapped reads
+df_counts_sum <- df_counts %>%
+  group_by(sample) %>%
+  summarize(n_million_reads = sum(n_reads)/10^6) %>%
+  separate(sample, 
+           into = c("carbon", "nitrogen","replicate","fraction"), 
+           sep = "_", 
+           remove = FALSE) 
+
+p1 <- ggplot(df_counts_sum, aes(x=sample, y=n_million_reads, fill=carbon)) + 
+  geom_col() + 
+  coord_flip() + 
+  ggtitle("Mapped reads per sample") +
+  ylab("Millions of mapped reads")
+
+# Number of raw and mapped reads 
+df_colsum <- df_colsum %>%
+  filter(!str_detect(Index, "Undetermined")) %>%
+  separate(Index, 
+           into = c("carbon", "nitrogen", "replicate", "frac", "ID"), 
+           sep = "_", 
+           remove = FALSE) 
+
+p2 <- ggplot(df_colsum)  +
+  geom_point(aes(x=nReads/10^6, y=nUsed/10^6, color = nitrogen, shape=carbon), size=3, alpha=0.8) + 
+  ggtitle("Raw reads vs mapped reads per sample") +
+  xlab("Raw reads (millions)") + 
+  ylab("Mapped reads (millions)")
+  
+p3 <- ggplot(df_colsum, aes(x=Index, y=fraction, fill = carbon)) +
+  geom_col() +
+  ylab("Fraction of reads mapped") + 
+  ggtitle("Fractions of reads mapped per sample") +
+  coord_flip() +
+  theme_grey(base_size = 8) 
+
+grid.arrange(p1, p3, nrow=2)
+```
+
+### Barcode diversity 
+
+In the previous PHB sorting experiment, the diversity of the reads was low compared to other types of BarSeq experiments from before. This reduced the number of useful reads per gene. Here we compare the cumulative distribution with experiment 1, and with an older MC sample. We see that the barcode diversity is most similar to the MC sample, and much better than in experiment 1. 
+
+```{r, fig.width = 8, fig.height = 3, message = FALSE}
+# Load raw data from some samples 
+df_codes_exp2_1 <- read_tsv("../data/20210624_barseq_mixed/counts/Formate_n0_s1_f0_S13_R1_001.codes") %>%
+  set_names(c("barcode", "count"))
+df_codes_exp2_2 <- read_tsv("../data/20210624_barseq_mixed/counts/Formate_n0_s2_f0_S17_R1_001.codes") %>%
+  set_names(c("barcode", "count"))
+
+df_codes_exp1_1 <- read_tsv("../data/20210525_barseq_PHBsort/counts/Formate_n0_s1_f0_S13_R1_001.codes") %>%
+  set_names(c("barcode", "count"))
+df_codes_exp1_2 <- read_tsv("../data/20210525_barseq_PHBsort/counts/Formate_n0_s2_f0_S17_R1_001.codes") %>%
+  set_names(c("barcode", "count"))
+
+df_codes_for <- read_tsv("../data/20210407_barseq_suc_for/counts/Formate_c1_0_S25_R1_001.codes") %>%
+  set_names(c("barcode", "count"))
+df_codes <- bind_rows(exp2_sample1 = df_codes_exp2_1,
+                      exp2_sample2 = df_codes_exp2_2, 
+                      exp1_sample1 = df_codes_exp1_1, 
+                      exp1_sample2 = df_codes_exp1_2, 
+                      mc_sample = df_codes_for, 
+                      .id = "sample")
+# load pool file for mapping barcodes to genes
+df_pool <- read_tsv("../data/ref/C_necator_poolfile.tsv") %>%
+  select(-barcode) %>% rename(barcode = rcbarcode)
+# map barcodes by merging tables
+df_codes <- left_join(df_codes, select(df_pool, barcode, scaffold, strand, pos, old_locus_tag),
+                      by = "barcode")
+
+df_codes %>%
+  ggplot(aes(x = count)) +
+  geom_histogram() +
+  facet_wrap(~ sample) +
+  scale_x_continuous(trans="log2") + 
+  # coord_cartesian(xlim = c(0, 12)) +
+  ylab("Number of reads") + 
+  xlab("Number of barcodes") + 
+  ggtitle("Reads per barcode")
+
+df_codes %>% group_by(sample) %>%
+  arrange(desc(count)) %>% slice(1:40) %>%
+  mutate(rank = seq_along(barcode), mapped = !is.na(pos)) %>%
+  ggplot(aes(y = count, x = rank, fill = mapped)) +
+  geom_col() +
+  facet_wrap(~ sample) +
+  ggtitle("Number of reads in the most seen barcodes")
+
+# to make it more quantitatively: How many barcodes in each sample are mapped
+df_codes %>% group_by(sample) %>%
+  summarize(
+    total_barcodes = n(),
+    mapped_barcodes = sum(!is.na(pos))
+  )
+# What is the cumulative distribution of barcodes? 
+plot_allbc <- df_codes %>% group_by(sample) %>%
+  arrange(desc(count)) %>% 
+  mutate(rank = seq_along(barcode), mapped = !is.na(pos)) %>%
+  mutate(cum_proportion = cumsum(count)/sum(count)) %>%
+  ggplot() +
+  geom_path(aes(x=rank, y=cum_proportion, group=sample, colour=sample)) + 
+  coord_cartesian(xlim= c(1,1000)) +
+  ggtitle("Cumulative barcode distribution")
+
+# If we look at only the mapped codes? 
+plot_mappedbc <- df_codes %>% group_by(sample) %>%
+  mutate(mapped = !is.na(pos)) %>%
+  filter(mapped==TRUE) %>%
+  arrange(desc(count)) %>% 
+  mutate(rank = seq_along(barcode)) %>%
+  mutate(cum_proportion = cumsum(count)/sum(count)) %>%
+  ggplot() +
+  geom_path(aes(x=rank, y=cum_proportion, group=sample, colour=sample)) +
+  coord_cartesian(xlim= c(1,1000)) +
+  ggtitle("Mapped barcodes only")
+
+ggarrange(plot_allbc, plot_mappedbc, ncol = 2, nrow = 1)
+```
+
+### Reads per barcode and gene
+Distribution of **number of reads per barcode**. Most samples have on average about 7^2=128 reads per barcode, which is good for quantiation. 
+
+```{r, fig.width = 6, fig.height = 4, message = FALSE}
+df_mean <- df_counts %>% 
+  group_by(sample) %>% 
+  summarise(mean = mean(n_reads, na.rm=TRUE), median = median(n_reads, na.rm=TRUE))
+
+plot_reads_per_bc <- ggplot(df_counts) + 
+  geom_histogram( aes(x=n_reads)) + 
+  facet_wrap(~ sample) + 
+  geom_vline(data=df_mean, aes(xintercept=mean), color="blue") +
+  scale_x_continuous(trans="log2") +
+  xlab("Number of barcodes") + 
+  ylab("Number of reads per barcode") + 
+  ggtitle("Reads per barcode per sample (blue = mean)")
+
+print(plot_reads_per_bc)
+```
+
+Similarly to the above, this is an overview about the **number of barcodes per gene** as a histogram. This distribution is the same for all conditions and replicates. The second plot is the **number of reads per gene**, averaged as median over all conditions (excluding Fraction 0 where counts were averaged by BarSeq pipeline). 
+
+The average of detected barcodes per gene is 6.3, and the median is 5. 
+The average reads per gene is 874, and the median is 195.  
+
+```{r, fig.width = 7, fig.height = 2, message = FALSE}
+
+reads_per_bc =  df_fitness %>% 
+  select(locus_tag, strains_per_gene) %>% 
+  distinct() %>%
+  filter(strains_per_gene<40)
+
+p_bc_per_gene <- ggplot(reads_per_bc) +
+  geom_histogram(aes(x=strains_per_gene)) +  
+  geom_vline(xintercept = mean(reads_per_bc$strains_per_gene)) + 
+  geom_vline(xintercept = median(reads_per_bc$strains_per_gene), color="blue") +
+  ggtitle("Number of barcodes per gene") +
+  theme_classic()
+
+reads_per_gene = df_fitness %>% 
+  filter(!identical(time,"0")) %>%
+  group_by(locus_tag) %>%
+  summarize(reads_per_gene_median = median(counts), reads_per_gene_mean = mean(counts))
+
+p_reads_per_gene <- ggplot(reads_per_gene) + 
+  geom_histogram(aes(x=reads_per_gene_median))+
+  scale_x_continuous(trans="log2") +
+  ggtitle("Number of reads per gene (all barcodes)") + 
+  geom_vline(xintercept = mean(reads_per_gene$reads_per_gene_median)) + 
+  geom_vline(xintercept = median(reads_per_gene$reads_per_gene_median), color="blue") +
+  theme_classic()
+  
+grid.arrange(p_bc_per_gene, p_reads_per_gene, nrow=1)
+
+```
+
+## Gene fitness analysis
+
+### Depletion between fractions
+
+We can plot log2 FC or normalized gene fitness in every fraction. For this type of overview it is best to summarize individual replicates (3x) to the mean or median, per time point and condition. We also add genome annotation to the summary table. 
+
+```{r, messages = FALSE}
+df_fitness_summary <- df_fitness %>%
+  group_by(locus_tag, scaffold, time, nitrogen, carbon, strains_per_gene) %>%
+  summarize(
+    norm_gene_fitness_median = median(norm_gene_fitness, na.rm = TRUE),
+    log2FC_median = median(log2FC, na.rm = TRUE),
+    tstat_median = median(t, na.rm = TRUE), 
+    norm_gene_fitness_mean = mean(norm_gene_fitness, na.rm = TRUE),
+    log2FC_mean = mean(log2FC, na.rm = TRUE),
+    tstat_mean = mean(t, na.rm = TRUE)) %>%
+  left_join(df_ref) %>%
+  mutate(gene_name = ifelse(is.na(gene_name), locus_tag, gene_name))
+```
+
+As sort of an internal control, we compare the gene fitness obtained by a complex procedure to the log2 FC of read counts, which is a very simple measure of 'fitness'. The two variables correlate well. The correlations are a bit better with means, without giving more outliers, and I will use means from now on. 
+
+```{r, fig.width = 6.5, fig.height = 6, message = FALSE}
+df_fitness_summary_clean <- df_fitness_summary %>%
+  filter(all(!is.infinite(log2FC_median))) %>%
+  group_by(nitrogen, carbon) %>%
+  slice_sample(n=5000)
+
+p1 <- ggplot(df_fitness_summary_clean) + 
+  geom_point(aes(x=log2FC_mean, y=norm_gene_fitness_mean, color = time), alpha=.2, size=1) +
+  facet_grid(cols = vars(carbon)) +
+  theme_classic() +
+  ggtitle("Means")
+  
+p2 <- ggplot(df_fitness_summary_clean) + 
+  geom_point(aes(x=log2FC_median, y=norm_gene_fitness_median, color = time), alpha=.2, size=1) +
+  facet_grid(cols = vars(carbon)) +
+  theme_classic() + 
+  ggtitle("Medians")
+
+grid.arrange(p1, p2, nrow=2)
+```
+
+### Enrichment and depletion in the top F1 fraction 
+The confidence of the enriched mutants in the F1 fraction is low. There are no genes with a score over 3, although the fact that there is some correlation between Formate and Fructose samples hints that these are actually enriched here. The low confidence levels make it hard to draw any conclusions here. 
+
+```{r, fig.width = 10, fig.height = 3.5, message = FALSE}
+df_fitness_comp2 <- df_fitness_summary %>% filter(time == "F1") %>%
+  group_by(locus_tag) %>% 
+  mutate(tstat_mean = min(tstat_mean)) %>%
+  select(locus_tag, nitrogen, carbon, norm_gene_fitness_mean, gene_name, COG_Process, tstat_mean) %>%
+  unite(nitrogen, nitrogen, carbon) %>%
+  pivot_wider(names_from = nitrogen, values_from = norm_gene_fitness_mean) %>%
+  filter(!is.na(locus_tag))
+
+top_n0_fruc_mut <- df_fitness_comp2 %>% ungroup %>% 
+  arrange(n0_Fru) %>% 
+  slice(1:300)
+top_n0_fruc_mut <- df_fitness_comp2 %>% ungroup %>% 
+  arrange(desc(n0_Fru)) %>% 
+  slice(1:300) %>%
+  add_row(top_n0_fruc_mut)
+
+top_n0_form_mut <- df_fitness_comp2 %>% ungroup %>% 
+  arrange(n0_For) %>% 
+  slice(1:300)
+top_n0_form_mut <- df_fitness_comp2 %>% ungroup %>% 
+  arrange(desc(n0_For)) %>% 
+  slice(1:300) %>% 
+  add_row(top_n0_form_mut)
+
+top_starve_mut <- full_join(top_n0_fruc_mut, top_n0_form_mut) %>%
+  mutate(starve_score = n0_For + n0_Fru) %>% 
+  arrange(starve_score)
+
+p_scatter <- ggplot(top_starve_mut) +
+  geom_point(aes(x=n0_Fru, y=n0_For, color=starve_score), size=2, alpha=0.5) +
+  theme_bw(base_size = 12) + 
+  # scale_color_distilÇler(palette = "Spectral") +
+  xlim(-4,1.5) + ylim(-4,1.5) +
+  scale_x_continuous(breaks = c(-4:1)) + 
+  scale_y_continuous(breaks = c(-4:1)) +
+  xlab("Fructose N-") + ylab("Formate N-") + 
+  theme(legend.position = "bottom") + 
+  scale_fill_discrete(name="Combined score") 
+  
+
+bottom20 <- top_starve_mut %>% 
+  arrange(starve_score) %>%
+  slice(1:10) %>%
+  pivot_longer(cols = n0_For:n0_Fru, names_to = "var", values_to="value")
+
+top20 <- top_starve_mut %>% 
+  arrange(desc(starve_score)) %>%
+  slice(1:10) %>%
+  pivot_longer(cols = n0_For:n0_Fru, names_to = "var", values_to="value")
+
+p_depleted <- ggplot(bottom20) + 
+  geom_bar(aes(x=gene_name, y=value, fill=var), stat="identity", position="dodge") + 
+  theme(legend.position = "none") + 
+  ylab("Combined score") + 
+  ggtitle("Most depleted genes") +
+  xlab("Genes") + 
+  coord_flip() 
+
+p_enriched <- ggplot(top20) + 
+  geom_bar(aes(x=gene_name, y=value, fill=var), stat="identity", position="dodge") + 
+  ylab("Combined score") +
+  xlab(NULL) +
+  theme(legend.title = element_blank()) +
+  ggtitle("Most enriched genes") +
+  coord_flip() 
+
+grid.arrange(p_scatter, p_depleted, p_enriched, nrow=1, 
+     top = text_grob("Enrichment and depletion in N-starved top fraction, exp2",size=20))
+```
+
+### Enrichment and depletion in the bottom F3 fraction 
+What if we look at the F3 fraction, where the main band is? 
+Here, we see a similar pattern with a correlation between the substrates. However, the scores are higher and many more mutants reach significance. 
+```{r, fig.width = 10, fig.height = 3.5, message = FALSE}
+df_fitness_comp <- df_fitness_summary %>% filter(time == "F3") %>%
+  group_by(locus_tag) %>% 
+  mutate(tstat_mean = min(tstat_mean)) %>%
+  select(locus_tag, nitrogen, carbon, norm_gene_fitness_mean, gene_name, COG_Process, tstat_mean) %>%
+  unite(nitrogen, nitrogen, carbon) %>%
+  pivot_wider(names_from = nitrogen, values_from = norm_gene_fitness_mean) %>%
+  filter(!is.na(locus_tag))
+
+top_n0_fruc_mut <- df_fitness_comp %>% ungroup %>% 
+  arrange(n0_Fru) %>% 
+  slice(1:300)
+top_n0_fruc_mut <- df_fitness_comp %>% ungroup %>% 
+  arrange(desc(n0_Fru)) %>% 
+  slice(1:300) %>%
+  add_row(top_n0_fruc_mut)
+
+top_n0_form_mut <- df_fitness_comp %>% ungroup %>% 
+  arrange(n0_For) %>% 
+  slice(1:300)
+top_n0_form_mut <- df_fitness_comp %>% ungroup %>% 
+  arrange(desc(n0_For)) %>% 
+  slice(1:300) %>% 
+  add_row(top_n0_form_mut)
+
+top_starve_mut <- full_join(top_n0_fruc_mut, top_n0_form_mut) %>%
+  mutate(starve_score = n0_For + n0_Fru) %>% 
+  arrange(starve_score)
+
+p_scatter <- ggplot(top_starve_mut) +
+  geom_point(aes(x=n0_Fru, y=n0_For, color=starve_score), size=2, alpha=0.5) +
+  theme_bw(base_size = 12) + 
+  # scale_color_distilÇler(palette = "Spectral") +
+  xlim(-5,2.5) + ylim(-5,2.5) +
+  scale_x_continuous(breaks = c(-5:2)) + 
+  scale_y_continuous(breaks = c(-5:2)) +
+  xlab("Fructose N-") + ylab("Formate N-") + 
+  theme(legend.position = "bottom") + 
+  scale_fill_discrete(name="Combined score")
+
+bottom20 <- top_starve_mut %>% 
+  arrange(starve_score) %>%
+  slice(1:20) %>%
+  pivot_longer(cols = n0_For:n0_Fru, names_to = "var", values_to="value")
+
+top20 <- top_starve_mut %>% 
+  arrange(desc(starve_score)) %>%
+  slice(1:20) %>%
+  pivot_longer(cols = n0_For:n0_Fru, names_to = "var", values_to="value")
+
+p_depleted <- ggplot(bottom20) + 
+  geom_bar(aes(x=reorder(gene_name, -value), y=value, fill=var), stat="identity", position="dodge") + 
+  theme(legend.position = "none") + 
+  ylab("Combined score") + 
+  ggtitle("Most depleted genes") +
+  xlab("Genes") + 
+  coord_flip() 
+
+p_enriched <- ggplot(top20) + 
+  geom_bar(aes(x=reorder(gene_name, value), y=value, fill=var), stat="identity", position="dodge") + 
+  ylab("Combined score") +
+  xlab(NULL) +
+  theme(legend.title = element_blank()) +
+  ggtitle("Most enriched genes") +
+  coord_flip() 
+
+grid.arrange(p_scatter, p_depleted, p_enriched, nrow=1, 
+     top = text_grob("Enrichment and depletion in N-starved bottom fraction", size=20))
+```
+
+### Most depleted genes in F3
+
+Since the scores are more significant in F3, we choose to look closer at those genes. Here we plot those that are at least depleted with a score of -2 in any medium, sorted by their combined depletion scores in both substrates. We also remove genes that had previously been determined to  be essential in either substrate, since their signals could just mean that they fail to metabolize the carbon source during the N starvation and thus did not produce PHB. The essentiality threshold was set to a depletion score of -3 after 8 generations. Some of the genes deemed not essential were still highly deleterious (score <-2), and could be essential in practice. The score after 8 generations in a chemostat is plotted in each subpanel. 
+
+```{r, fig.width = 6, fig.height = 7}
+form_threshold = -2.5
+fruc_threshold = -2.5
+df_depleted_f3 <- df_fitness_comp %>% ungroup() %>%
+  mutate(starve_score = n0_For + n0_Fru) %>% 
+  arrange(starve_score) %>%
+  filter(n0_For < form_threshold | n0_Fru < fruc_threshold)  %>%
+  left_join(df_ref)
+
+# Top 1-30 depleted genes 
+df_fitness_summary_depleted_f3 <- df_fitness_summary %>% 
+  filter(str_detect(locus_tag, paste(df_depleted_f3$locus_tag, collapse="|"))) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) 
+
+# Remove mm essential genes - formate 
+df_fitness_summary_depleted_f3_for <- df_fitness_summary_depleted_f3 %>%
+  left_join(df_essential) %>% 
+  filter(!(essential_for))
+
+ggplot(df_fitness_summary_depleted_f3_for, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  geom_point() + 
+  geom_text(aes(label=round(norm_fg_mean_for, digits=2), color=norm_fg_mean_for>0), x=.5, y=-3, hjust=0, vjust=0, size=2.5) + 
+  facet_wrap(facets=~factor(gene_name, levels=unique(df_depleted_f3$gene_name)), ncol=5) + 
+  ggtitle("Depleted genes in F3, essential genes for formate excluded") + 
+  theme_grey(base_size = 9) + 
+  xlab("Fraction") +
+  ylab("Gene fitness mean") 
+
+# Remove mm essential genes -fructose
+df_fitness_summary_depleted_f3_frc <- df_fitness_summary_depleted_f3 %>%
+  left_join(df_essential) %>% 
+  filter(!(essential_frc))
+
+ggplot(df_fitness_summary_depleted_f3_frc, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  geom_point() + 
+  geom_text(aes(label=round(norm_fg_mean_frc, digits=2), color=norm_fg_mean_frc>0), x=.5, y=-3, hjust=0, vjust=0, size=2.5) + 
+  facet_wrap(facets=~factor(gene_name, levels=unique(df_depleted_f3$gene_name)), ncol=5) + 
+  ggtitle("Depleted genes in F3, essential genes for fructose excluded") + 
+  theme_grey(base_size = 9) + 
+  xlab("Fraction") +
+  ylab("Gene fitness mean") 
+```
+
+### Protein interactions 
+To learn more about functional relationships between enriched genes/mutants, we can submit the gene list to the STRING interaction database and retrieve a network of probable interactions. Copied from Micheals BarSeq-pulse. 
+```{r, message = FALSE}
+library(ggraph)
+library(tidygraph)
+
+# function retrieve network interaction data from STRING DB
+# separate gene IDs by "%0d"; species/taxon ID for Cupriavidus necator H16: 381666
+# (see https://string-db.org/cgi/organisms)
+retrieve_STRING <- function(gene_ID, taxon_ID, min_score = 0000, ref = NULL) {
+  gene_list <- paste(gene_ID, collapse = "%0d")
+  string_graph <- paste0(
+    "https://string-db.org/api/tsv/network?identifiers=", 
+    gene_list, "&species=", taxon_ID, "&required_score=", min_score) %>%
+  read_tsv(col_types = cols()) %>%
+  mutate(across(matches("stringId"), function(x) gsub(paste0(taxon_ID, "."), "", x))) %>%
+  as_tbl_graph()
+  if (!is.null(ref)) {
+    left_join(string_graph, ref, by = "name")
+  } else {
+    string_graph
+  }
+}
+
+# function to space labels in certain distance to circle
+nudge_circle <- function(n, size_x = 0.15, size_y = 0.1) {
+  nudge_x = size_x * -cos(seq(0.5*pi, 2.5*pi, length.out = n))
+  nudge_y = size_y * sin(seq(0.5*pi, 2.5*pi, length.out = n))
+  list(x = nudge_x, y = nudge_y)
+}
+```
+Submit the most depleted genes to String! 
+We do this twice, once including all genes and once those essential in both substrates. 
+```{r, fig.width = 8, fig.height = 5}
+# Remove genes essential in both substrates 
+# Sort by most starved, select reasonable number to query STRING about
+
+list_to_String <-  df_depleted_f3 %>%
+  arrange(starve_score) %>%
+  ungroup() %>% 
+  slice(1:40) %>%
+  select(locus_tag) 
+
+graph_formate_depleted <- retrieve_STRING(
+  gene_ID = pull(list_to_String),
+  taxon_ID = 381666,
+  ref = rename(df_ref, name = locus_tag)
+)
+
+graph_formate_depleted %>% arrange(COG_Process) %>% activate(edges) %>% 
+  filter(score >= 0.4) %>%
+  ggraph(layout = 'linear', circular = TRUE) +
+  geom_edge_arc(colour = grey(0.6, 0.5), aes(width = score)) + 
+  geom_node_point(aes(colour = COG_Process), size = 4) +
+  geom_node_text(nudge_x = nudge_circle(34)$x, nudge_y = nudge_circle(34)$y,
+    size = 3, aes(label = gene_name, colour = COG_Process)) +
+  scale_edge_width(range = c(0.2, 2)) +
+  theme_graph(background = "white", foreground = grey(0.5),
+    plot_margin = margin(30, 30, 10, 10))
+```
+
+```{r, fig.width = 8, fig.height = 5}
+# Remove genes essential in both substrates 
+# Sort by most starved, select reasonable number to query STRING about
+
+list_to_String <-  df_essential %>%
+  filter(!essential_for & !essential_frc) %>%
+  inner_join(df_depleted_f3) %>% 
+  arrange(starve_score) %>%
+  ungroup() %>% 
+  # slice(1:40) %>%
+  select(locus_tag) 
+
+graph_formate_depleted <- retrieve_STRING(
+  gene_ID = pull(list_to_String),
+  taxon_ID = 381666,
+  ref = rename(df_ref, name = locus_tag)
+)
+
+graph_formate_depleted %>% arrange(COG_Process) %>% activate(edges) %>% 
+  filter(score >= 0.4) %>%
+  ggraph(layout = 'linear', circular = TRUE) +
+  geom_edge_arc(colour = grey(0.6, 0.5), aes(width = score)) + 
+  geom_node_point(aes(colour = COG_Process), size = 4) +
+  geom_node_text(nudge_x = nudge_circle(34)$x, nudge_y = nudge_circle(34)$y,
+    size = 3, aes(label = gene_name, colour = COG_Process)) +
+  scale_edge_width(range = c(0.2, 2)) +
+  theme_graph(background = "white", foreground = grey(0.5),
+    plot_margin = margin(30, 30, 10, 10))
+```
+
+Let's look at genes by their interaction groups. First is the large amino acid metabolism interaction grop. These are genes that relate to the synthesis of 
+
+* Phe, Typ, Trp synthesis (aroQ, aroB, pheA, aroE, aroA, aroC, aroL)
+* Gly, Ser, Thr (trpA) 
+* Histidine (hisA)
+
+These are mostly essential in minimal media. 
+
+```{r, fig.width=6, fig.height=3}
+gene_list = "A3435|A0792|A0795|A1317|A2612|A3161|A3170|A3411|A3434"
+genes_to_plot <- df_fitness_summary %>% 
+  filter(str_detect(locus_tag, gene_list)) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) 
+
+genes_to_plot %>% ungroup() %>% 
+  select(locus_tag, gene_name, Process, Pathway) %>% 
+  unique() %>% print()
+
+ggplot(genes_to_plot, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  geom_point() + 
+  facet_wrap(facets=~factor(gene_name, 
+                            levels=unique(df_depleted_f3$gene_name)), ncol=3) + 
+  ggtitle("Depletion in N-starved bottom fraction: Amio acid synthesis") + 
+  theme_grey(base_size = 10) + 
+  # theme(legend.position = "none") +
+  xlab("Fraction") +
+  ylab("Gene fitness mean")
+```
+
+There is one group of three genes that are in the central carbon metabolism or in the pentose pathway. Notably, they are depleted in both fructose and formate. 
+```{r, fig.width=6, fig.height=1.5}
+gene_list = "A1374|B1213|B2565"
+genes_to_plot <- df_fitness_summary %>% 
+  filter(str_detect(locus_tag, gene_list)) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) 
+
+genes_to_plot %>% ungroup() %>% 
+  select(locus_tag, gene_name, Process, Pathway) %>% 
+  unique() %>% print()
+
+ggplot(genes_to_plot, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  # geom_path(aes(linetype=nitrogen)) + 
+  # scale_linetype_manual(values = c("dashed", "solid")) + 
+  geom_point() + 
+  facet_wrap(facets=~factor(gene_name, 
+                            levels=unique(df_depleted_f3$gene_name)), ncol=5) + 
+  ggtitle("Carbon metabolism") + 
+  theme_grey(base_size = 8) + 
+  xlab("Fraction") +
+  ylab("Gene fitness mean")
+
+```
+
+Then there are four small groups. None of these are well known as far as I can tell. Tentative functions are listed below. The fourth group is entirely unknown. These are generally only depleted in fructose, not formate. 
+```{r, fig.width=6, fig.height=3}
+#eggNOG names: rbsA, rbsB
+gene_list = "B1498|B1500"
+genes_to_plot <- df_fitness_summary %>% 
+  filter(str_detect(locus_tag, gene_list)) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) 
+
+genes_to_plot %>% ungroup() %>% 
+  select(locus_tag, gene_name, Process, Pathway) %>% 
+  unique() %>% print()
+
+p1 <- ggplot(genes_to_plot, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  # geom_path(aes(linetype=nitrogen)) + 
+  # scale_linetype_manual(values = c("dashed", "solid")) + 
+  geom_point() + 
+  facet_wrap(facets=~factor(gene_name, 
+                            levels=unique(df_depleted_f3$gene_name)), ncol=5) + 
+  ggtitle("Fructose transport") + 
+  theme_grey(base_size = 9) + 
+  theme(legend.position = "none") +
+  xlab("Fraction") +
+  ylab("Gene fitness mean")
+
+
+# eggNOG names: glpD, cyoA¨
+gene_list = "A2508|A1071"
+genes_to_plot <- df_fitness_summary %>% 
+  filter(str_detect(locus_tag, gene_list)) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) 
+
+genes_to_plot %>% ungroup() %>% 
+  select(locus_tag, gene_name, Process, Pathway) %>% 
+  unique() %>% print()
+
+p2 <- ggplot(genes_to_plot, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  geom_point() + 
+  facet_wrap(facets=~factor(gene_name, 
+                            levels=unique(df_depleted_f3$gene_name)), ncol=5) + 
+  ggtitle("Electron transport chain & lipid") + 
+  theme_grey(base_size = 9) + 
+  theme(legend.position = "none") + 
+  xlab("Fraction") +
+  ylab("Gene fitness mean")
+
+# eggNOG names: pgl,eda,aceE 
+gene_list = "B2037|B2040"
+genes_to_plot <- df_fitness_summary %>% 
+  filter(str_detect(locus_tag, gene_list)) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) 
+
+genes_to_plot %>% ungroup() %>% 
+  select(locus_tag, gene_name, Process, Pathway) %>% 
+  unique() %>% print()
+
+p3 <- ggplot(genes_to_plot, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  geom_point() + 
+  facet_wrap(facets=~factor(gene_name, 
+                            levels=unique(df_depleted_f3$gene_name)), ncol=5) + 
+  ggtitle("Quorum sensing") + 
+  theme_grey(base_size = 9) + 
+  theme(legend.position = "none") + 
+  xlab("Fraction") +
+  ylab("Gene fitness mean")
+
+# eggNOG names: pgl,eda,aceE 
+gene_list = "A1373|A1372"
+genes_to_plot <- df_fitness_summary %>% 
+  filter(str_detect(locus_tag, gene_list)) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) 
+
+genes_to_plot %>% ungroup() %>% 
+  select(locus_tag, gene_name, Process, Pathway) %>% 
+  unique() %>% print()
+
+p4 <- ggplot(genes_to_plot, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  geom_point() + 
+  facet_wrap(facets=~factor(gene_name, 
+                            levels=unique(df_depleted_f3$gene_name)), ncol=5) + 
+  ggtitle("unknown") + 
+  theme_grey(base_size = 9) + 
+  theme(legend.position = "none") + 
+  xlab("Fraction") +
+  ylab("Gene fitness mean")
+
+lay <- rbind(c(1,2),
+             c(3,4))
+grid.arrange(p1, p2, p3, p4, layout_matrix=lay, 
+     top = text_grob("Depletion in N-starved bottom fraction", size=12))
+```
+
+Then there are genes that are outside of the interaction groups. Importantly, this includes the PBH polymerase phaC. 
+
+* phaC PHB polymerase
+* hisP Transporter for histidine? 
+* phbH Carbon metabolism? 
+
+```{r, fig.width=6, fig.height=3}
+gene_list = "B1693|B0642|A1437|B2337|A2334|B1553|A1737|A0801|A0325|A0045|B1409"
+genes_to_plot <- df_fitness_summary %>% 
+  filter(str_detect(locus_tag, gene_list)) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) 
+
+genes_to_plot %>% ungroup() %>% 
+  select(locus_tag, gene_name, Process, Pathway) %>% 
+  unique() %>% print()
+
+ggplot(genes_to_plot, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  geom_point() + 
+  facet_wrap(facets=~factor(gene_name, 
+                            levels=unique(df_depleted_f3$gene_name)), ncol=4) + 
+  ggtitle("Other genes depleted in F3") + 
+  theme_grey(base_size = 8) + 
+  # theme(legend.position = "none") +
+  xlab("Fraction") +
+  ylab("Gene fitness mean")
+```
+
+
+### Most enriched genes 
+In the opposite corner of the scatter plot, those that are overrepresented in the bottom fraction, we find weaker scores but if we put the threshold at 1.5 we have a few to work with. The only essential gene here was bfd in fructose. 
+Not all genes here show a clear pattern with increasing density further down. The most enriched, B2054, is also enriched in F1 with fructose. Therefore these should be interpreted with caution. 
+```{r, fig.width = 6, fig.height = 3}
+form_threshold = 1.5
+fruc_threshold = 1.5
+df_enriched_f3 <- df_fitness_comp %>% ungroup() %>%
+  mutate(starve_score = n0_For + n0_Fru) %>% 
+  arrange(starve_score) %>%
+  filter(n0_For > form_threshold | n0_Fru > fruc_threshold)  %>%
+  left_join(df_ref)
+
+df_enriched_f3 %>% ungroup() %>% 
+  select(locus_tag, gene_name, Process, Pathway) %>% 
+  unique() %>% print()
+
+# Top 1-30 depleted genes 
+df_fitness_summary_enriched_f3 <- df_fitness_summary %>% 
+  filter(str_detect(locus_tag, paste(df_enriched_f3$locus_tag, collapse="|"))) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) 
+
+# Remove mm essential genes - formate 
+df_fitness_summary_enriched_f3_for <- df_fitness_summary_enriched_f3 %>%
+  left_join(df_essential) %>% 
+  filter(!(essential_for))
+
+ggplot(df_fitness_summary_enriched_f3_for, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+  geom_point() + 
+  geom_text(aes(label=round(norm_fg_mean_for, digits=2), color=norm_fg_mean_for>0), x=.5, y=-3, hjust=0, vjust=0, size=2.5) + 
+  facet_wrap(facets=~factor(gene_name, levels=unique(df_enriched_f3$gene_name)), ncol=5) + 
+  ggtitle("Enriched genes in F3, essential genes for formate excluded") + 
+  theme_grey(base_size = 9) + 
+  xlab("Fraction") +
+  ylab("Gene fitness mean") 
+
+# Remove mm essential genes -fructose
+df_fitness_summary_enriched_f3_frc <- df_fitness_summary_enriched_f3 %>%
+  left_join(df_essential) %>% 
+  filter(!(essential_frc))
+
+ggplot(df_fitness_summary_enriched_f3_frc, aes(x=time, y=norm_gene_fitness_mean, group=condition, color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path() + 
+
+  geom_text(aes(label=round(norm_fg_mean_frc, digits=2), color=norm_fg_mean_frc>0), x=.5, y=-3, hjust=0, vjust=0, size=2.5) + 
+  facet_wrap(facets=~factor(gene_name, levels=unique(df_enriched_f3$gene_name)), ncol=5) + 
+  ggtitle("Enriched genes in F3, essential genes for fructose excluded") + 
+  theme_grey(base_size = 9) + 
+  xlab("Fraction") +
+  ylab("Gene fitness mean") 
+```
+
+Submit the most *enriched* genes to String! 
+The only interaction detected is between the un-named possible transcription factors A1886 and A1389. 
+```{r, fig.width = 7.5, fig.height = 4}
+list_to_String <- df_enriched_f3 %>% 
+  ungroup() %>% 
+  slice(1:35) %>%
+  select(locus_tag) 
+
+graph_formate_enriched <- retrieve_STRING(
+  gene_ID = pull(list_to_String),
+  taxon_ID = 381666,
+  ref = rename(df_ref, name = locus_tag)
+)
+
+graph_formate_enriched %>% arrange(COG_Process) %>% activate(edges) %>% 
+  filter(score >= 0.4) %>%
+  ggraph(layout = 'linear', circular = TRUE) +
+  geom_edge_arc(colour = grey(0.6, 0.5), aes(width = score)) + 
+  geom_node_point(aes(colour = COG_Process), size = 4) +
+  geom_node_text(nudge_x = nudge_circle(34)$x, nudge_y = nudge_circle(34)$y,
+    size = 3, aes(label = gene_name, colour = COG_Process)) +
+  scale_edge_width(range = c(0.2, 2)) +
+  theme_graph(background = "white", foreground = grey(0.5),
+    plot_margin = margin(10, 10, 10, 10))
+```
+
+## Comparsion between Wetmore and Deseq scores 
+The pipeline allows for two methods to calculate enrichment or depletion scores: Wetmore (2015) or the Deseq2 method. In the folder results_deseq, the scores have been computed by the simpler Deseq2 method. 
+
+### Data import and processing
+
+The Deseq2 pipeline output is slightly different. The replicates are already averaged, and the per-fraction (or per-timepoint) scores are in the log2FC column. 
+
+```{r, message = FALSE}
+# import fitness data, the final output of the BarSeq pipeline
+load("../data/20210624_barseq_mixed/results_deseq/fitness_gene.Rdata")
+df_fitness_deseq <- fitness_gene %>%
+  filter(str_starts(condition, "F")) %>%
+  # mutate(ID = as.numeric(ID)) %>%
+  separate(condition, 
+           into = c("carbon", "nitrogen"), 
+           sep = "_") %>%
+  rename(locus_tag = locusId) %>%
+  mutate(time = recode(time, `0`="F0", `1`="F1", `2`="F2", `3`="F3") ) %>%
+  filter(!str_detect(time, "F0"))
+
+# Add annotation and fix gene names
+df_fitness_summary3 <- df_fitness_deseq %>%
+  left_join(df_ref) %>%
+  mutate(gene_name = ifelse(is.na(gene_name), locus_tag, gene_name)) %>%
+  mutate(log2_deseq = log2FC) %>%
+  select(locus_tag, time, carbon, nitrogen, log2_deseq) %>%
+  right_join(df_fitness_summary)
+
+
+```
+
+We want to see the correlation with the Wetmore method. The methods seem to be largely correlated, but less so in F2 and individual datapoints stand out in all fractions. Especially in depleted genes are there many examples where the Deseq2 score is negative but close to zero. 
+
+```{r, fig.width = 6.5, fig.height = 3.2, message = FALSE}
+df_fitness_summary_slice <- df_fitness_summary3 %>%
+  group_by(nitrogen, carbon) %>%
+  slice_sample(n=5000) 
+
+ggplot(df_fitness_summary_slice) + 
+  geom_point(aes(x=norm_gene_fitness_mean, y=log2_deseq), alpha=.2, size=1) +
+  facet_grid(cols = vars(time), rows = vars(carbon)) +
+  geom_smooth(aes(x=norm_gene_fitness_mean, y=log2_deseq,color = time)) +
+  theme_classic() + 
+  xlab("Wetmore score") + ylab("Deseq2 score")
+```
+
+Let's look at individual genes. There are single datapoints that are different, but there is not no drastic changes. The conclusion is that the results are robust to the methods used (Deseq2 or Wetmore), which is reassuring. 
+
+```{r, fig.width = 7, fig.height = 6}
+form_threshold = -2.5
+fruc_threshold = -2.5
+df_depleted_f3 <- df_fitness_comp %>% ungroup() %>%
+  mutate(starve_score = n0_For + n0_Fru) %>% 
+  arrange(starve_score) %>%
+  filter(n0_For < form_threshold | n0_Fru < fruc_threshold)  %>%
+  left_join(df_ref)
+  
+# Top 1-30 depleted genes 
+df_fitness_summary_depleted_deseq <- df_fitness_summary3 %>% 
+  filter(str_detect(locus_tag, paste(df_depleted_f3$locus_tag[1:30], collapse="|"))) %>%
+  unite(condition, c("nitrogen", "carbon"), remove=FALSE) %>% 
+  rename(Wetmore=norm_gene_fitness_mean, Deseq2=log2_deseq) %>% 
+  pivot_longer(cols=c("Wetmore","Deseq2"), values_to = "enrichment_score", names_to="pipeline")
+
+ggplot(df_fitness_summary_depleted_deseq, aes(x=time, 
+                                           y=enrichment_score, 
+                                           group=interaction(condition,pipeline), 
+                                           color=carbon)) +
+  geom_hline(yintercept=0, colour = "grey") + 
+  geom_path(aes(linetype = pipeline)) +
+  scale_linetype_manual(values = c("dashed", "solid")) +
+  geom_point() + 
+  facet_wrap(facets=~factor(gene_name, levels=unique(df_depleted_f3$gene_name)), ncol=5) + 
+  ggtitle("Most depleted genes in F3 1-30") + 
+  theme_grey(base_size = 9) + 
+  xlab("Fraction") +
+  ylab("Gene fitness mean")
+```

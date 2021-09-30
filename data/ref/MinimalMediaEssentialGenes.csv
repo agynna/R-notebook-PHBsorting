@@ -1,0 +1,41 @@
+locus_tag,gene_name,protein_name,System,Process,Pathway
+H16_A1374,pdhA H16_A1374,Pyruvate dehydrogenase E1 component (PDH E1 component) (EC 1.2.4.1),Metabolism,Carbohydrate metabolism,Glycolysis / Gluconeogenesis
+H16_A3084,panB H16_A3084,3-methyl-2-oxobutanoate hydroxymethyltransferase (EC 2.1.2.11) (Ketopantoate hydroxymethyltransferase) (KPHMT),Metabolism,Metabolism of cofactors and vitamins,Pantothenate and CoA biosynthesis
+H16_A3434,aroB H16_A3434,3-dehydroquinate synthase (DHQS) (EC 4.2.3.4),Metabolism,Amino acid metabolism,"Phenylalanine, tyrosine and tryptophan biosynthesis"
+H16_A0795,aroA H16_A0795,3-phosphoshikimate 1-carboxyvinyltransferase (EC 2.5.1.19) (5-enolpyruvylshikimate-3-phosphate synthase) (EPSP synthase) (EPSPS),Metabolism,Amino acid metabolism,"Phenylalanine, tyrosine and tryptophan biosynthesis"
+H16_A3161,aroE H16_A3161,Shikimate dehydrogenase (NADP(+)) (SDH) (EC 1.1.1.25),Metabolism,Amino acid metabolism,"Phenylalanine, tyrosine and tryptophan biosynthesis"
+H16_A2945,metG H16_A2945,Methionine--tRNA ligase (EC 6.1.1.10) (Methionyl-tRNA synthetase) (MetRS),Genetic Information Processing,Genetic information processing,Transfer RNA biogenesis
+H16_A0235,thiC H16_A0235,Phosphomethylpyrimidine synthase (EC 4.1.99.17) (Hydroxymethylpyrimidine phosphate synthase) (HMP-P synthase) (HMP-phosphate synthase) (HMPP synthase) (Thiamine biosynthesis protein ThiC),Metabolism,Metabolism of cofactors and vitamins,Thiamine metabolism
+H16_A3170,aroQ1 aroQ H16_A3170,3-dehydroquinate dehydratase (3-dehydroquinase) (EC 4.2.1.10) (Type II DHQase),Metabolism,Amino acid metabolism,"Phenylalanine, tyrosine and tryptophan biosynthesis"
+H16_A3412,hisH H16_A3412,Imidazole glycerol phosphate synthase subunit HisH (EC 4.3.2.10) (IGP synthase glutaminase subunit) (EC 3.5.1.2) (IGP synthase subunit HisH) (ImGP synthase subunit HisH) (IGPS subunit HisH),Metabolism,Amino acid metabolism,Histidine metabolism
+H16_A0246,H16_A0246,Methylenetetrahydrofolate reductase (EC 1.5.1.20),Metabolism,Metabolism of cofactors and vitamins,One carbon pool by folate
+H16_A3319,trpE H16_A3319,Anthranilate synthase component 1 (EC 4.1.3.27),Metabolism,Amino acid metabolism,"Phenylalanine, tyrosine and tryptophan biosynthesis"
+H16_A2619,leuB3 leuB H16_A2619,3-isopropylmalate dehydrogenase (EC 1.1.1.85) (3-IPM-DH) (Beta-IPM dehydrogenase) (IMDH),Metabolism,Amino acid metabolism,"Valine, leucine and isoleucine biosynthesis"
+H16_B0083,H16_B0083,Uncharacterized protein,Hypothetical,Hypothetical,Hypothetical
+H16_A0792,pheA H16_A0792,"Prephenate dehydratase, Chorismate mutase (EC 5.4.99.5)",Metabolism,Amino acid metabolism,"Phenylalanine, tyrosine and tryptophan biosynthesis"
+H16_A2994,cysG H16_A2994,Uroporphyrin-III C-methyltransferase (EC 2.1.1.107),Metabolism,Metabolism of cofactors and vitamins,Porphyrin and chlorophyll metabolism
+H16_A0210,H16_A0210,"Transcriptional regulator, TetR/AcrR-family",Genetic Information Processing,Genetic information processing,Transcription factors
+H16_A0427,ilvA H16_A0427,L-threonine dehydratase (EC 4.3.1.19) (Threonine deaminase),Metabolism,Amino acid metabolism,"Glycine, serine and threonine metabolism"
+H16_A2606,metB metZ H16_A2606,O-succinylhomoserine sulfhydrylase (OSH sulfhydrylase) (OSHS sulfhydrylase) (EC 2.5.1.-),Metabolism,Amino acid metabolism,Cysteine and methionine metabolism
+H16_A0010,H16_A0010,Putative phage-related protein,Hypothetical,Hypothetical,Hypothetical
+H16_B1792,H16_B1792,"Transcriptional regulator, LacI-family",Genetic Information Processing,Genetic information processing,Transcription factors
+H16_B0084,H16_B0084,Ferrous iron transport protein B,Cellular Processes,Signaling and cellular processes,Transporters
+H16_B1580,H16_B1580,"Transcriptional regulator, LysR-family",Genetic Information Processing,Genetic information processing,Transcription factors
+H16_A3446,H16_A3446,Predicted transmembrane transcriptional regulator (Anti-sigma factor),Hypothetical,Hypothetical,Hypothetical
+H16_A2999,cysI1 H16_A2999,"Sulfite reductase, beta subunit (Hemoprotein with two 4Fe-4S domains) (EC 1.8.1.2)",Metabolism,Energy metabolism,Sulfur metabolism
+H16_A2996,cysD H16_A2996,Sulfate adenylyltransferase subunit 2 (EC 2.7.7.4),Metabolism,Biosynthesis of other secondary metabolites,Monobactam biosynthesis
+H16_A0270,czcD1 H16_A0270,Co/Zn/Cd efflux system component,Hypothetical,Hypothetical,Hypothetical
+H16_A0801,lapB H16_A0801,Lipopolysaccharide assembly protein B,Not Included in Pathway or Brite,Unclassified: metabolism,Glycan metabolism
+H16_A1511,purL H16_A1511,Phosphoribosylformylglycinamidine synthase (FGAM synthase) (FGAMS) (EC 6.3.5.3) (Formylglycinamide ribonucleotide amidotransferase) (FGAR amidotransferase) (FGAR-AT),Metabolism,Nucleotide metabolism,Purine metabolism
+H16_A0396,H16_A0396,Putative threonine efflux protein,Hypothetical,Hypothetical,Hypothetical
+H16_A3001,H16_A3001,"Transcriptional regulator, LysR-family",Genetic Information Processing,Genetic information processing,Transcription factors
+H16_A2607,purF H16_A2607,Amidophosphoribosyltransferase (ATase) (EC 2.4.2.14) (Glutamine phosphoribosylpyrophosphate amidotransferase) (GPATase),Metabolism,Amino acid metabolism,"Alanine, aspartate and glutamate metabolism"
+H16_A2620,leuD leuD3 H16_A2620,3-isopropylmalate dehydratase small subunit (EC 4.2.1.33) (Alpha-IPM isomerase) (IPMI) (Isopropylmalate isomerase),Metabolism,Amino acid metabolism,"Valine, leucine and isoleucine biosynthesis"
+H16_A2621,leuC3 leuC H16_A2621,3-isopropylmalate dehydratase large subunit (EC 4.2.1.33) (Alpha-IPM isomerase) (IPMI) (Isopropylmalate isomerase),Metabolism,Amino acid metabolism,"Valine, leucine and isoleucine biosynthesis"
+H16_A2995,cysN1 H16_A2995,Sulfate adenylyltransferase subunit 1 (EC 2.7.7.4),Metabolism,Biosynthesis of other secondary metabolites,Monobactam biosynthesis
+H16_A3435,aroL aroK H16_A3435,Shikimate kinase (SK) (EC 2.7.1.71),Metabolism,Amino acid metabolism,"Phenylalanine, tyrosine and tryptophan biosynthesis"
+H16_A0336,gpsA H16_A0336,Glycerol-3-phosphate dehydrogenase [NAD(P)+] (EC 1.1.1.94) (NAD(P)H-dependent glycerol-3-phosphate dehydrogenase),Metabolism,Lipid metabolism,Glycerophospholipid metabolism
+H16_B1581,metE H16_B1581,"5-methyltetrahydropteroyltriglutamate--homocysteine methyltransferase (EC 2.1.1.14) (Cobalamin-independent methionine synthase) (Methionine synthase, vitamin-B12 independent isozyme)",Metabolism,Amino acid metabolism,Cysteine and methionine metabolism
+H16_A0211,metXS H16_A0211,Homoserine O-succinyltransferase (HST) (EC 2.3.1.46) (Homoserine transsuccinylase) (HTS),Metabolism,Amino acid metabolism,Cysteine and methionine metabolism
+H16_A1037,ilvC H16_A1037,Ketol-acid reductoisomerase (NADP(+)) (KARI) (EC 1.1.1.86) (Acetohydroxy-acid isomeroreductase) (AHIR) (Alpha-keto-beta-hydroxylacyl reductoisomerase) (Ketol-acid reductoisomerase type 1) (Ketol-acid reductoisomerase type I),Metabolism,Amino acid metabolism,"Valine, leucine and isoleucine biosynthesis"
+H16_A3411,hisA H16_A3411,1-(5-phosphoribosyl)-5-[(5-phosphoribosylamino)methylideneamino] imidazole-4-carboxamide isomerase (EC 5.3.1.16) (Phosphoribosylformimino-5-aminoimidazole carboxamide ribotide isomerase),Metabolism,Amino acid metabolism,Histidine metabolism
